@@ -1,0 +1,404 @@
+:root {
+    --primary: #4ade80;
+    --primary-dark: #22c55e;
+    --bg-dark: #0f172a;
+    --sidebar-bg: rgba(30, 41, 59, 0.8);
+    --card-bg: rgba(51, 65, 85, 0.5);
+    --text-white: #f8fafc;
+    --text-gray: #94a3b8;
+    --glass-border: rgba(255, 255, 255, 0.1);
+    --shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
+}
+
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
+body {
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    background-color: var(--bg-dark);
+    color: var(--text-white);
+    height: 100vh;
+    overflow: hidden;
+}
+
+#app {
+    display: flex;
+    flex-direction: column;
+    height: 100vh;
+}
+
+header {
+    height: 60px;
+    background: var(--sidebar-bg);
+    backdrop-filter: blur(10px);
+    border-bottom: 1px solid var(--glass-border);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0 2rem;
+    z-index: 1000;
+}
+
+.logo {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+.logo i {
+    font-size: 1.5rem;
+    color: var(--primary);
+}
+
+.logo h1 {
+    font-size: 1.25rem;
+    font-weight: 700;
+    letter-spacing: -0.025em;
+}
+
+.controls {
+    display: flex;
+    gap: 1rem;
+}
+
+button {
+    cursor: pointer;
+    border: none;
+    border-radius: 8px;
+    transition: all 0.2s ease;
+}
+
+#save-btn, #clear-btn, #backup-btn, #import-btn {
+    padding: 8px 14px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-weight: 600;
+    font-size: 0.85rem;
+}
+
+#backup-btn {
+    background-color: #3b82f6;
+    color: white;
+}
+
+#backup-btn:hover {
+    background-color: #2563eb;
+    transform: translateY(-1px);
+}
+
+#import-btn {
+    background-color: #8b5cf6;
+    color: white;
+}
+
+#import-btn:hover {
+    background-color: #7c3aed;
+    transform: translateY(-1px);
+}
+
+#save-btn {
+    background-color: var(--primary);
+    color: var(--bg-dark);
+}
+
+#save-btn:hover {
+    background-color: var(--primary-dark);
+    transform: translateY(-1px);
+}
+
+#clear-btn {
+    background-color: #ef4444;
+    color: white;
+}
+
+#clear-btn:hover {
+    background-color: #dc2626;
+    transform: translateY(-1px);
+}
+
+main {
+    flex: 1;
+    display: flex;
+    overflow: hidden;
+}
+
+#sidebar {
+    width: 320px;
+    background: var(--sidebar-bg);
+    backdrop-filter: blur(10px);
+    border-right: 1px solid var(--glass-border);
+    display: flex;
+    flex-direction: column;
+    padding: 1.5rem;
+    gap: 2rem;
+    z-index: 999;
+    overflow-y: auto;
+}
+
+.sidebar-header h2 {
+    font-size: 1.1rem;
+    margin-bottom: 0.5rem;
+}
+
+.sidebar-header p {
+    font-size: 0.85rem;
+    color: var(--text-gray);
+}
+
+/* Tabs */
+.sidebar-tabs {
+    display: flex;
+    gap: 5px;
+    padding: 0 0 1rem 0;
+}
+
+.tab-btn {
+    flex: 1;
+    background: rgba(255,255,255,0.05);
+    border: 1px solid var(--glass-border);
+    color: var(--text-gray);
+    padding: 6px;
+    border-radius: 4px;
+    font-size: 0.7rem;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.tab-btn.active {
+    background: var(--primary);
+    color: var(--bg-dark);
+    font-weight: bold;
+    border-color: var(--primary);
+}
+
+.object-grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 12px;
+}
+
+.obj-btn {
+    background: var(--card-bg);
+    border: 1px solid var(--glass-border);
+    color: var(--text-white);
+    padding: 1rem;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.obj-btn i {
+    font-size: 1.5rem;
+    margin-bottom: 4px;
+}
+
+.obj-btn span {
+    font-size: 0.8rem;
+    font-weight: 500;
+}
+
+.obj-btn:hover {
+    background: rgba(255, 255, 255, 0.1);
+    border-color: var(--primary);
+    transform: scale(1.05);
+}
+
+.obj-btn.active {
+    background: rgba(74, 222, 128, 0.15);
+    border-color: var(--primary);
+    box-shadow: 0 0 15px rgba(74, 222, 128, 0.2);
+}
+
+.obj-btn.active i {
+    color: var(--primary);
+}
+
+/* Tool Buttons */
+.tool-btn {
+    background: rgba(255,255,255,0.05);
+    border: 1px solid var(--glass-border);
+    color: var(--text-white);
+    padding: 8px 4px;
+    border-radius: 6px;
+    cursor: pointer;
+    transition: all 0.2s;
+    text-align: center;
+}
+
+.tool-btn:hover {
+    background: rgba(255,255,255,0.1);
+}
+
+.tool-btn.active {
+    background: var(--primary);
+    color: var(--bg-dark);
+}
+
+.sidebar-footer {
+    margin-top: auto;
+    background: var(--card-bg);
+    padding: 1rem;
+    border-radius: 12px;
+    border: 1px solid var(--glass-border);
+}
+
+.sidebar-footer h3 {
+    font-size: 0.9rem;
+    margin-bottom: 1rem;
+    color: var(--text-gray);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+}
+
+.placeholder-text {
+    font-size: 0.85rem;
+    color: var(--text-gray);
+    font-style: italic;
+    text-align: center;
+}
+
+#map-container {
+    flex: 1;
+    position: relative;
+}
+
+#map {
+    height: 100%;
+    width: 100%;
+    background: #1e293b;
+}
+
+/* Custom Leaflet Dark Theme */
+.leaflet-container {
+    background: #1e293b !important;
+}
+
+.leaflet-tile {
+    opacity: 1; /* Garantindo visibilidade total das camadas */
+}
+
+.leaflet-control-scale {
+    margin-bottom: 20px !important;
+    margin-right: 20px !important;
+}
+
+.leaflet-control-scale-line {
+    background: var(--sidebar-bg) !important;
+    color: var(--text-white) !important;
+    border: 1px solid var(--glass-border) !important;
+    backdrop-filter: blur(10px);
+    font-size: 11px !important;
+    padding: 2px 5px !important;
+}
+
+.leaflet-control-zoom {
+    border: none !important;
+}
+
+.leaflet-control-zoom-in, .leaflet-control-zoom-out, .leaflet-control-layers {
+    background: var(--sidebar-bg) !important;
+    color: var(--text-white) !important;
+    border: 1px solid var(--glass-border) !important;
+    backdrop-filter: blur(10px);
+}
+
+.leaflet-control-layers-expanded {
+    padding: 10px !important;
+    border-radius: 12px !important;
+}
+
+.custom-tooltip {
+    background: var(--sidebar-bg) !important;
+    color: var(--text-white) !important;
+    border: 1px solid var(--glass-border) !important;
+    backdrop-filter: blur(8px);
+    border-radius: 6px !important;
+    box-shadow: 0 4px 15px rgba(0,0,0,0.3) !important;
+    font-family: 'Inter', sans-serif !important;
+}
+
+.custom-tooltip:before {
+    border-top-color: var(--sidebar-bg) !important;
+}
+
+.leaflet-popup-content-wrapper {
+    background: var(--sidebar-bg) !important;
+    color: var(--text-white) !important;
+    backdrop-filter: blur(10px);
+    border: 1px solid var(--glass-border);
+    border-radius: 12px !important;
+}
+
+.leaflet-popup-tip {
+    background: var(--sidebar-bg) !important;
+    border: 1px solid var(--glass-border);
+}
+
+/* Custom Marker Styles */
+.custom-marker {
+    background: none;
+    border: none;
+}
+
+.marker-content {
+    width: 40px;
+    height: 40px;
+    background: var(--bg-dark);
+    border: 2px solid var(--primary);
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--primary);
+    box-shadow: 0 0 20px rgba(74, 222, 128, 0.4);
+    font-size: 1.2rem;
+    transition: all 0.3s ease;
+}
+
+.marker-content:hover {
+    transform: scale(1.2);
+    box-shadow: 0 0 30px rgba(74, 222, 128, 0.6);
+}
+
+/* Animations */
+/* Grid Layer CSS overlay */
+.map-grid-overlay {
+    background-image: 
+        linear-gradient(rgba(255,255,255,0.1) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(255,255,255,0.1) 1px, transparent 1px);
+    background-size: 50px 50px; /* Adjust based on scale? */
+    pointer-events: none;
+    z-index: 1000;
+}
+
+/* Cursor Feedbacks */
+.cursor-add { cursor: crosshair !important; }
+.cursor-measure { cursor: cell !important; }
+
+@keyframes fadeIn {
+    from { opacity: 0; transform: translateY(10px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+
+@media print {
+    #sidebar, header, .leaflet-control-zoom, .leaflet-control-layers {
+        display: none !important;
+    }
+    #map-container {
+        width: 100% !important;
+        height: 100% !important;
+        position: absolute;
+        top: 0; left: 0;
+    }
+}
+
+main aside > *, main section {
+    animation: fadeIn 0.5s ease-out forwards;
+}
