@@ -8,11 +8,14 @@ const state = {
     isFencing: false,
     isPiping: false,
     measurePoints: [],
+    measureDots: [],
     tempPoints: [],
+    tempDotGroup: null,
     measureLine: null,
     measureArea: null,
     gridVisible: false,
-    autoSatelliteZoom: 19
+    autoSatelliteZoom: 19,
+    autoSwitched: false
 };
 
 const objectConfigs = {
@@ -26,29 +29,88 @@ const objectConfigs = {
     mango: { icon: 'fa-spa', name: 'Mangueira', color: '#15803d', cat: 'nature' },
     well: { icon: 'fa-bore-hole', name: 'Poço', color: '#fbbf24', cat: 'infra' },
     light: { icon: 'fa-lightbulb', name: 'Poste', color: '#fef08a', cat: 'infra' },
-    fence: { name: 'Cerca', color: '#78350f', isLine: true },
+    fence: { name: 'Cerca', color: '#a16207', isLine: true },
     pipe: { name: 'Tubulação', color: '#3b82f6', isLine: true }
 };
+
+// --- Utilitários ---
+
+// Escapa texto para uso seguro dentro de innerHTML
+function sanitize(str) {
+    const div = document.createElement('div');
+    div.appendChild(document.createTextNode(String(str)));
+    return div.innerHTML;
+}
+
+// Escapa string para uso seguro em atributos HTML (ex: value="...")
+function escapeAttr(str) {
+    return String(str)
+        .replace(/&/g, '&amp;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;');
+}
+
+function showToast(msg) {
+    const t = document.createElement('div');
+    t.className = 'toast';
+    t.textContent = msg;
+    document.body.appendChild(t);
+    setTimeout(() => t.remove(), 3000);
+}
+
+function showConfirm(msg, onConfirm) {
+    const overlay = document.createElement('div');
+    overlay.className = 'tp-modal-overlay';
+    overlay.tabIndex = -1;
+    overlay.innerHTML = `
+        <div class="tp-modal">
+            <p class="tp-modal-msg">${sanitize(msg)}</p>
+            <div class="tp-modal-actions">
+                <button class="tp-btn-cancel">Cancelar</button>
+                <button class="tp-btn-confirm">Confirmar</button>
+            </div>
+        </div>
+    `;
+    document.body.appendChild(overlay);
+    overlay.focus();
+    overlay.querySelector('.tp-btn-cancel').onclick = () => overlay.remove();
+    overlay.querySelector('.tp-btn-confirm').onclick = () => { overlay.remove(); onConfirm(); };
+    overlay.onkeydown = (e) => { if (e.key === 'Escape') overlay.remove(); };
+    overlay.onclick = (e) => { if (e.target === overlay) overlay.remove(); };
+}
 
 // --- 2. Inicialização do Mapa ---
 function initMap() {
     const savedView = JSON.parse(localStorage.getItem('tp_view')) || { center: [-3.4111, -39.0306], zoom: 18 };
     state.map = L.map('map', { zoomControl: true, attributionControl: false, maxZoom: 22 }).setView(savedView.center, savedView.zoom);
 
+    state.tempDotGroup = L.layerGroup().addTo(state.map);
+
     const baseLayers = {
         "Modo Escuro": L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', { maxZoom: 22 }),
-        "Satélite": L.tileLayer('http://{s}.google.com/vt/lyrs=s,h&x={x}&y={y}&z={z}', { maxZoom: 22, subdomains: ['mt0','mt1','mt2','mt3'] })
+        "Satélite": L.tileLayer('https://{s}.google.com/vt/lyrs=s,h&x={x}&y={y}&z={z}', { maxZoom: 22, subdomains: ['mt0', 'mt1', 'mt2', 'mt3'] })
     };
     baseLayers["Modo Escuro"].addTo(state.map);
     L.control.layers(baseLayers, null, { position: 'topright' }).addTo(state.map);
 
+    // Reseta flag de auto-troca quando o usuário escolhe manualmente
+    state.map.on('baselayerchange', () => { state.autoSwitched = false; });
+
     state.map.on('moveend zoomend', () => {
         const zoom = state.map.getZoom();
         localStorage.setItem('tp_view', JSON.stringify({ center: [state.map.getCenter().lat, state.map.getCenter().lng], zoom }));
-        // Auto-Satélite (Modo 3)
+
+        // Auto-Satélite bidirecional: só alterna se não foi o usuário que escolheu
         if (zoom >= state.autoSatelliteZoom && !state.map.hasLayer(baseLayers["Satélite"])) {
             state.map.removeLayer(baseLayers["Modo Escuro"]);
             baseLayers["Satélite"].addTo(state.map);
+            state.autoSwitched = true;
+        } else if (zoom < state.autoSatelliteZoom && state.autoSwitched && state.map.hasLayer(baseLayers["Satélite"])) {
+            state.map.removeLayer(baseLayers["Satélite"]);
+            baseLayers["Modo Escuro"].addTo(state.map);
+            state.autoSwitched = false;
         }
     });
 
@@ -57,13 +119,6 @@ function initMap() {
         else if (state.isFencing) handleLineAction(e.latlng, 'fence');
         else if (state.isPiping) handleLineAction(e.latlng, 'pipe');
         else if (state.selectedType) addObject(e.latlng);
-    });
-
-    // Delegar popups para evitar perda de listener (Modo estável)
-    state.map.on('popupopen', (e) => {
-        const source = e.popup._source;
-        if (!source || !source.entityData) return;
-        setupPopupListeners(source);
     });
 
     loadAll();
@@ -84,7 +139,7 @@ function addObject(latlng, type = state.selectedType, id = Date.now(), data = nu
     const entityData = data || { id, type, latlng: [latlng.lat, latlng.lng], customName: config.name };
     marker.entityData = entityData;
 
-    if (type === 'light') { // Efeito de Luz
+    if (type === 'light') {
         marker.lightLayer = L.circle(latlng, { radius: 15, color: '#fef08a', fillOpacity: 0.15, weight: 1, interactive: false }).addTo(state.map);
         marker.on('drag', (e) => marker.lightLayer.setLatLng(e.latlng));
     }
@@ -98,18 +153,19 @@ function addObject(latlng, type = state.selectedType, id = Date.now(), data = nu
 
 function handleLineAction(latlng, type) {
     state.tempPoints.push(latlng);
-    const dot = L.circle(latlng, { radius: 2, color: objectConfigs[type].color }).addTo(state.map);
+    // Usa LayerGroup dedicado para pontos temporários (sem risco de remover layers do usuário)
+    state.tempDotGroup.addLayer(L.circle(latlng, { radius: 2, color: objectConfigs[type].color }));
     if (state.tempPoints.length > 1) {
         createLineEntity(state.tempPoints, type);
         state.tempPoints = [];
-        state.map.eachLayer(l => { if (l instanceof L.Circle && l.options.radius === 2) state.map.removeLayer(l); });
+        state.tempDotGroup.clearLayers();
     }
 }
 
 function createLineEntity(pts, type, id = Date.now(), data = null) {
     const config = objectConfigs[type];
     const line = L.polyline(pts, { color: config.color, weight: type === 'fence' ? 6 : 4, dashArray: type === 'pipe' ? '5,10' : null }).addTo(state.map);
-    
+
     const entityData = data || { id, type, points: pts.map(p => [p.lat, p.lng]), customName: config.name, length: calculatePathDistance(pts) };
     line.entityData = entityData;
 
@@ -121,12 +177,12 @@ function createLineEntity(pts, type, id = Date.now(), data = null) {
 
 function updateEntityVisuals(instance) {
     const d = instance.entityData;
-    const tooltip = `<strong>${d.customName}</strong>${d.length ? `<br><small>${d.length.toFixed(1)}m</small>` : ''}`;
-    instance.bindTooltip(tooltip, { direction: 'top', className: 'custom-tooltip' });
-    
+    const tooltipHtml = `<strong>${sanitize(d.customName)}</strong>${d.length ? `<br><small>${d.length.toFixed(1)}m</small>` : ''}`;
+    instance.bindTooltip(tooltipHtml, { direction: 'top', className: 'custom-tooltip' });
+
     const popup = `
         <div class="popup-box" style="min-width:180px;">
-            <input type="text" id="p-name-${d.id}" value="${d.customName}" style="width:100%; background:#222; color:#fff; border:1px solid #444; padding:5px; border-radius:4px; margin-bottom:10px;">
+            <input type="text" id="p-name-${d.id}" value="${escapeAttr(d.customName)}" style="width:100%; background:#222; color:#fff; border:1px solid #444; padding:5px; border-radius:4px; margin-bottom:10px;">
             <div style="display:flex; gap:5px;">
                 <button id="p-del-${d.id}" style="width:40px; background:#ef4444; color:#fff; border-radius:4px;"><i class="fas fa-trash"></i></button>
                 <button id="p-ok-${d.id}" style="flex:1; background:var(--primary); font-weight:bold; border-radius:4px;">OK</button>
@@ -134,6 +190,8 @@ function updateEntityVisuals(instance) {
         </div>
     `;
     instance.bindPopup(popup, { closeButton: false });
+    // Listener por instância (evita usar API privada _source do Leaflet)
+    instance.off('popupopen').on('popupopen', () => setupPopupListeners(instance));
 }
 
 function setupPopupListeners(instance) {
@@ -150,7 +208,7 @@ function setupPopupListeners(instance) {
             L.DomEvent.stopPropagation(e);
             if (!confirmMode) {
                 confirmMode = true; del.innerHTML = 'SIM?'; del.style.background = '#991b1b';
-                setTimeout(() => { if(del){ confirmMode = false; del.innerHTML = '<i class="fas fa-trash"></i>'; del.style.background = '#ef4444'; } }, 3000);
+                setTimeout(() => { if (del) { confirmMode = false; del.innerHTML = '<i class="fas fa-trash"></i>'; del.style.background = '#ef4444'; } }, 3000);
             } else { deleteEntity(instance); }
         };
     }
@@ -193,81 +251,138 @@ function initControls() {
         }
     });
 
-    // Ferramentas de Linha e Medição
-    document.getElementById('measure-btn').onclick = (e) => { e.stopPropagation(); resetSelection(); state.isMeasuring = true; e.target.closest('button').classList.add('active'); document.getElementById('map').classList.add('cursor-measure'); };
-    document.getElementById('fence-btn').onclick = (e) => { e.stopPropagation(); resetSelection(); state.isFencing = true; e.target.closest('button').classList.add('active'); document.getElementById('map').classList.add('cursor-add'); showToast("Clique em dois pontos para cercar"); };
-    document.getElementById('pipe-btn').onclick = (e) => { e.stopPropagation(); resetSelection(); state.isPiping = true; e.target.closest('button').classList.add('active'); document.getElementById('map').classList.add('cursor-add'); showToast("Clique em dois pontos para o cano"); };
-    
+    // Ferramentas
+    document.getElementById('measure-btn').onclick = (e) => {
+        e.stopPropagation(); resetSelection(); state.isMeasuring = true;
+        e.target.closest('button').classList.add('active');
+        document.getElementById('map').classList.add('cursor-measure');
+        showToast("Clique para medir. Feche o polígono para calcular área.");
+    };
+    document.getElementById('fence-btn').onclick = (e) => {
+        e.stopPropagation(); resetSelection(); state.isFencing = true;
+        e.target.closest('button').classList.add('active');
+        document.getElementById('map').classList.add('cursor-add');
+        showToast("Clique em dois pontos para cercar");
+    };
+    document.getElementById('pipe-btn').onclick = (e) => {
+        e.stopPropagation(); resetSelection(); state.isPiping = true;
+        e.target.closest('button').classList.add('active');
+        document.getElementById('map').classList.add('cursor-add');
+        showToast("Clique em dois pontos para o cano");
+    };
+
     document.getElementById('grid-btn').onclick = toggleGrid;
     document.getElementById('list-btn').onclick = showInventory;
     document.getElementById('export-btn').onclick = () => window.print();
     document.getElementById('save-btn').onclick = () => { saveAll(); showToast("Salvo!"); };
-    document.getElementById('clear-btn').onclick = () => { if(confirm("Limpar tudo?")) { localStorage.clear(); location.reload(); }};
-    
+    document.getElementById('clear-btn').onclick = () => {
+        showConfirm("Limpar tudo do mapa? Esta ação não pode ser desfeita.", () => {
+            localStorage.clear(); location.reload();
+        });
+    };
+
     // Backup e Importação
     document.getElementById('backup-btn').onclick = exportBackup;
     document.getElementById('import-btn').onclick = () => document.getElementById('import-input').click();
     document.getElementById('import-input').onchange = importBackup;
+
+    // Sidebar Toggle (mobile)
+    document.getElementById('sidebar-toggle').onclick = () => {
+        document.getElementById('sidebar').classList.toggle('open');
+    };
 }
 
 function resetSelection() {
     state.selectedType = null;
     state.isMeasuring = state.isFencing = state.isPiping = false;
     state.tempPoints = [];
+    state.tempDotGroup?.clearLayers();
+    // Limpa pontos de medição do mapa
+    state.measureDots.forEach(d => state.map.removeLayer(d));
+    state.measureDots = [];
     state.measurePoints = [];
-    if (state.measureLine) state.map.removeLayer(state.measureLine);
-    if (state.measureArea) state.map.removeLayer(state.measureArea);
+    if (state.measureLine) { state.map.removeLayer(state.measureLine); state.measureLine = null; }
+    if (state.measureArea) { state.map.removeLayer(state.measureArea); state.measureArea = null; }
     document.querySelectorAll('.obj-btn, .tool-btn').forEach(b => b.classList.remove('active'));
     document.querySelector('.obj-btn[data-type="null"]').classList.add('active');
     document.getElementById('map').classList.remove('cursor-add', 'cursor-measure');
 }
 
 function handleMeasure(latlng) {
+    // Fecha polígono se clicar perto do ponto inicial
     if (state.measurePoints.length > 2 && state.map.distance(latlng, state.measurePoints[0]) < 15) {
         state.measureArea = L.polygon(state.measurePoints, { color: '#4ade80', weight: 2, fillOpacity: 0.2 }).addTo(state.map);
         const area = calculatePolygonArea(state.measurePoints);
-        L.popup().setLatLng(state.measurePoints[0]).setContent(`🎯 Área: ${area.toFixed(1)} m²`).openOn(state.map);
-        state.measurePoints = []; return;
+        L.popup().setLatLng(state.measurePoints[0]).setContent(`Area: ${area.toFixed(1)} m2`).openOn(state.map);
+        // Limpa os pontos e linha após fechar o polígono
+        state.measureDots.forEach(d => state.map.removeLayer(d));
+        state.measureDots = [];
+        if (state.measureLine) { state.map.removeLayer(state.measureLine); state.measureLine = null; }
+        state.measurePoints = [];
+        return;
     }
     state.measurePoints.push(latlng);
-    L.circle(latlng, { radius: 2, color: '#4ade80' }).addTo(state.map);
+    const dot = L.circle(latlng, { radius: 2, color: '#4ade80' }).addTo(state.map);
+    state.measureDots.push(dot);
     if (state.measurePoints.length > 1) {
         if (state.measureLine) state.map.removeLayer(state.measureLine);
         state.measureLine = L.polyline(state.measurePoints, { color: '#4ade80', weight: 3, dashArray: '5,10' }).addTo(state.map);
-        L.popup().setLatLng(latlng).setContent(`Distância: ${calculatePathDistance(state.measurePoints).toFixed(1)}m`).openOn(state.map);
+        L.popup().setLatLng(latlng).setContent(`Distancia: ${calculatePathDistance(state.measurePoints).toFixed(1)}m`).openOn(state.map);
     }
 }
 
 // --- 5. Lógica de Apoio (Cálculos, Backup, Inventário) ---
 function calculatePathDistance(pts) {
     let d = 0;
-    for(let i=1; i<pts.length; i++) d += state.map.distance(L.latLng(pts[i-1]), L.latLng(pts[i]));
+    for (let i = 1; i < pts.length; i++) d += state.map.distance(L.latLng(pts[i - 1]), L.latLng(pts[i]));
     return d;
 }
 
 function calculatePolygonArea(pts) {
-    let area = 0; const R = 6378137;
-    const coords = pts.map(p => ({ x: R * p.lng * Math.PI / 180 * Math.cos(p.lat * Math.PI / 180), y: R * p.lat * Math.PI / 180 }));
-    for (let i = 0, j = coords.length - 1; i < coords.length; j = i++) area += (coords[j].x + coords[i].x) * (coords[j].y - coords[i].y);
+    let area = 0;
+    const R = 6378137;
+    const coords = pts.map(p => ({
+        x: R * p.lng * Math.PI / 180 * Math.cos(p.lat * Math.PI / 180),
+        y: R * p.lat * Math.PI / 180
+    }));
+    for (let i = 0, j = coords.length - 1; i < coords.length; j = i++) {
+        area += (coords[j].x + coords[i].x) * (coords[j].y - coords[i].y);
+    }
     return Math.abs(area / 2);
 }
 
 function showInventory() {
+    if (document.querySelector('.tp-modal-overlay')) return;
     const list = {};
     let fLen = 0, pLen = 0;
     state.markers.forEach(m => { const n = objectConfigs[m.data.type].name; list[n] = (list[n] || 0) + 1; });
-    state.lines.forEach(l => { if(l.data.type === 'fence') fLen += l.data.length; else pLen += l.data.length; });
-    
-    let html = '<div style="background:#0f172a; color:#fff; padding:20px; border-radius:10px; border:2px solid var(--primary);">';
-    html += '<h3 style="color:var(--primary); margin-bottom:15px;">📋 Inventário</h3>';
-    for(const [n, c] of Object.entries(list)) html += `<p>🔹 <strong>${n}</strong>: ${c}</p>`;
-    if(fLen) html += `<p>🚧 <strong>Cercas</strong>: ${fLen.toFixed(1)}m</p>`;
-    if(pLen) html += `<p>💧 <strong>Canos</strong>: ${pLen.toFixed(1)}m</p>`;
-    html += '<button onclick="this.parentElement.remove()" style="width:100%; margin-top:15px; background:var(--primary); padding:8px; border-radius:5px; color:#000; font-weight:bold;">Fechar</button></div>';
+    state.lines.forEach(l => { if (l.data.type === 'fence') fLen += l.data.length; else pLen += l.data.length; });
 
-    const div = document.createElement('div');
-    div.style.cssText = 'position:fixed; top:50%; left:50%; transform:translate(-50%, -50%); z-index:3000; width:280px;';
-    div.innerHTML = html; document.body.appendChild(div);
+    let items = '';
+    for (const [n, c] of Object.entries(list)) {
+        items += `<p class="inv-item"><span>${sanitize(n)}</span><strong>${c} un</strong></p>`;
+    }
+    if (fLen) items += `<p class="inv-item"><span>Cercas</span><strong>${fLen.toFixed(1)} m</strong></p>`;
+    if (pLen) items += `<p class="inv-item"><span>Canos</span><strong>${pLen.toFixed(1)} m</strong></p>`;
+    if (!items) items = '<p class="placeholder-text">Nenhum item no mapa</p>';
+
+    const overlay = document.createElement('div');
+    overlay.className = 'tp-modal-overlay';
+    overlay.tabIndex = -1;
+    overlay.innerHTML = `
+        <div class="tp-modal">
+            <h3 class="tp-modal-title">Inventario</h3>
+            ${items}
+            <div class="tp-modal-actions">
+                <button class="tp-btn-confirm">Fechar</button>
+            </div>
+        </div>
+    `;
+    document.body.appendChild(overlay);
+    overlay.focus();
+    overlay.querySelector('.tp-btn-confirm').onclick = () => overlay.remove();
+    overlay.onclick = (e) => { if (e.target === overlay) overlay.remove(); };
+    overlay.onkeydown = (e) => { if (e.key === 'Escape') overlay.remove(); };
 }
 
 function toggleGrid() {
@@ -276,9 +391,38 @@ function toggleGrid() {
     if (state.gridVisible) {
         const grid = document.createElement('div');
         grid.id = 'g-layer';
-        grid.style.cssText = 'position:absolute;top:0;left:0;width:100%;height:100%;z-index:1000;pointer-events:none;background-image:linear-gradient(#ffffff11 1px,transparent 1px),linear-gradient(90deg,#ffffff11 1px,transparent 1px);background-size:50px 50px;';
+        grid.className = 'map-grid-overlay';
         document.getElementById('map').appendChild(grid);
-    } else { document.getElementById('g-layer')?.remove(); }
+        updateGrid();
+        state.map.on('zoomend', updateGrid);
+    } else {
+        document.getElementById('g-layer')?.remove();
+        document.getElementById('grid-scale')?.remove();
+        state.map.off('zoomend', updateGrid);
+    }
+}
+
+function updateGrid() {
+    const grid = document.getElementById('g-layer');
+    if (!grid) return;
+    const zoom = state.map.getZoom();
+    const lat = state.map.getCenter().lat;
+    // Metros por pixel na latitude atual
+    const mpp = 156543.03392 * Math.cos(lat * Math.PI / 180) / Math.pow(2, zoom);
+    const rawMeters = 60 * mpp; // tamanho alvo ~60px na tela
+    const mag = Math.pow(10, Math.floor(Math.log10(rawMeters)));
+    const niceMeters = [1, 2, 5, 10].find(n => n * mag >= rawMeters) * mag;
+    const pxSize = niceMeters / mpp;
+    grid.style.backgroundSize = `${pxSize}px ${pxSize}px`;
+
+    let label = document.getElementById('grid-scale');
+    if (!label) {
+        label = document.createElement('div');
+        label.id = 'grid-scale';
+        label.className = 'grid-scale-label';
+        document.getElementById('map').appendChild(label);
+    }
+    label.textContent = niceMeters >= 1000 ? `Grade: ${niceMeters / 1000} km` : `Grade: ${niceMeters} m`;
 }
 
 function saveAll() {
@@ -294,23 +438,39 @@ function loadAll() {
 }
 
 function exportBackup() {
-    const data = { markers: state.markers.map(m => m.data), lines: state.lines.map(l => l.data), view: JSON.parse(localStorage.getItem('tp_view')) };
+    const data = {
+        markers: state.markers.map(m => m.data),
+        lines: state.lines.map(l => l.data),
+        view: JSON.parse(localStorage.getItem('tp_view'))
+    };
     const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
-    const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = `plan_backup_${new Date().toLocaleDateString()}.json`; a.click();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `plan_backup_${new Date().toLocaleDateString('pt-BR').replace(/\//g, '-')}.json`;
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
 function importBackup(e) {
-    const file = e.target.files[0]; if(!file) return;
+    const file = e.target.files[0];
+    if (!file) return;
     const reader = new FileReader();
     reader.onload = (ev) => {
-        const d = JSON.parse(ev.target.result);
-        if(confirm("Substituir mapa atual pelo backup?")) {
-            localStorage.setItem('tp_markers', JSON.stringify(d.markers));
-            localStorage.setItem('tp_lines', JSON.stringify(d.lines || []));
-            location.reload();
+        try {
+            const d = JSON.parse(ev.target.result);
+            if (!d.markers) throw new Error('Formato inválido');
+            showConfirm("Substituir mapa atual pelo backup?", () => {
+                localStorage.setItem('tp_markers', JSON.stringify(d.markers));
+                localStorage.setItem('tp_lines', JSON.stringify(d.lines || []));
+                location.reload();
+            });
+        } catch {
+            showToast("Erro: arquivo de backup inválido");
         }
     };
     reader.readAsText(file);
+    e.target.value = ''; // permite reimportar o mesmo arquivo
 }
 
 function showSidebarInfo(instance) {
@@ -318,21 +478,16 @@ function showSidebarInfo(instance) {
     if (!instance) { panel.innerHTML = '<p class="placeholder-text">Selecione algo no mapa</p>'; return; }
     const d = instance.entityData;
     panel.innerHTML = `
-        <div style="padding:10px;">
-            <p style="color:var(--primary); font-weight:bold;">${d.customName}</p>
-            <input type="text" id="s-edit-name" value="${d.customName}" style="width:100%; margin:10px 0; padding:8px; background:rgba(255,255,255,0.05); color:#fff; border:1px solid #444;">
-            <button id="s-del-btn" style="width:100%; background:#ef4444; color:#fff; padding:8px; border-radius:5px;">Excluir</button>
+        <div class="sidebar-info">
+            <p class="info-name">${sanitize(d.customName)}</p>
+            <input type="text" id="s-edit-name" class="info-input" value="${escapeAttr(d.customName)}">
+            <button id="s-del-btn" class="info-del-btn">Excluir</button>
         </div>
     `;
     document.getElementById('s-edit-name').oninput = (e) => { d.customName = e.target.value; updateEntityVisuals(instance); saveAll(); };
-    document.getElementById('s-del-btn').onclick = () => { if(confirm("Excluir item?")) deleteEntity(instance); };
-}
-
-function showToast(msg) {
-    const t = document.createElement('div');
-    t.style.cssText = 'position:fixed; top:20px; right:20px; background:var(--primary); color:#000; padding:10px 20px; border-radius:5px; z-index:4000; font-weight:bold; animation:fadeIn 0.3s;';
-    t.innerText = msg; document.body.appendChild(t);
-    setTimeout(() => t.remove(), 3000);
+    document.getElementById('s-del-btn').onclick = () => {
+        showConfirm("Excluir este item?", () => deleteEntity(instance));
+    };
 }
 
 document.addEventListener('DOMContentLoaded', () => { initMap(); initControls(); });
