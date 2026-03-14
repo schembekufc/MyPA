@@ -1,0 +1,11 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(git add index.html style.css script.js)",
+      "Bash(git commit:*)",
+      "Bash(git push)",
+      "WebSearch",
+      "Bash(git add index.html script.js)"
+    ]
+  }
+}
